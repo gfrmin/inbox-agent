@@ -41,7 +41,8 @@ def fetch(limit: int):
 
 
 @cli.command()
-def process():
+@click.option("--limit", default=None, type=int, help="Max emails to process.")
+def process(limit: int | None):
     """Extract structured facts from unprocessed emails."""
     from inbox_agent.observation import process_emails
     from inbox_agent.store import get_unprocessed
@@ -51,8 +52,9 @@ def process():
         console.print("[dim]No unprocessed emails.[/dim]")
         return
 
-    console.print(f"Processing {len(unprocessed)} emails...")
-    facts_count, topics_count = process_emails(unprocessed)
+    batch = unprocessed[:limit] if limit else unprocessed
+    console.print(f"Processing {len(batch)} of {len(unprocessed)} unprocessed emails...")
+    facts_count, topics_count = process_emails(batch)
     console.print(
         f"[green]{facts_count} facts extracted, {topics_count} topics discovered.[/green]"
     )
