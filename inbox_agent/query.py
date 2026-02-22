@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import date
 
 import httpx
 
@@ -8,8 +9,12 @@ MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1:latest")
 
 SYSTEM_PROMPT = """\
 You are an email assistant with access to the user's email archive, extracted facts,
-and prior Q&A history. Answer the question based on the provided context. Be concise
-and direct. If the answer isn't in the context, say so.
+and prior Q&A history. Today's date is {today}.
+
+Answer thoroughly using ALL relevant evidence from the context below.
+When listing multiple items, use bullet points with specific dates, amounts, and names.
+Include every matching item you find — do not summarize or omit entries.
+If the answer isn't in the context, say so.
 
 After your answer, on a new line, output a JSON line starting with TOPICS: followed by
 a JSON array of 1-3 short topic tags relevant to this question, e.g.:
@@ -35,10 +40,25 @@ def _format_emails(emails: list[dict]) -> str:
 def _format_evidence(evidence: list[dict]) -> str:
     if not evidence:
         return ""
-    lines = ["## Extracted Facts"]
+    grouped: dict[str, list[dict]] = {}
     for e in evidence:
-        conf = e.get("confidence", "?")
-        lines.append(f"- [{e.get('evidence_type', '')}] {e.get('content', '')} (confidence: {conf})")
+        etype = e.get("evidence_type", "other")
+        grouped.setdefault(etype, []).append(e)
+    section_titles = {
+        "entity": "Entities",
+        "commitment": "Commitments",
+        "topic": "Topics",
+        "event": "Events & Dates",
+        "deadline": "Deadlines",
+        "action_item": "Action Items",
+    }
+    lines = ["## Extracted Facts"]
+    for etype, items in grouped.items():
+        title = section_titles.get(etype, etype.replace("_", " ").title())
+        lines.append(f"\n### {title}")
+        for e in items:
+            conf = e.get("confidence", "?")
+            lines.append(f"- {e.get('content', '')} [confidence: {conf}]")
     return "\n".join(lines)
 
 
@@ -88,7 +108,7 @@ def ask(question: str, emails: list[dict],
         json={
             "model": MODEL,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT.format(today=date.today().isoformat())},
                 {"role": "user", "content": user_message},
             ],
         },
